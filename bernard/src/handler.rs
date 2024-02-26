@@ -1,4 +1,4 @@
-use std::io::{ErrorKind, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
 
 pub struct Handler<'a> {
@@ -9,14 +9,13 @@ pub struct Handler<'a> {
 
 impl<'a> Handler<'a> {
     pub fn new(stream: &'a mut TcpStream) -> Self {
-        let mut buffer = [0; 16];
-        let mut os = String::new();
-
         let addr = match stream.peer_addr() {
             Ok(add) => add.to_string(),
             Err(e) => e.kind().to_string(),
         };
 
+        let mut buffer = [0; 16];
+        let mut os = "Unknown".to_string();
         match stream.read(&mut buffer) {
             Ok(size) => {
                 os = String::from_utf8_lossy(&buffer[..size])
@@ -27,7 +26,6 @@ impl<'a> Handler<'a> {
                 println!("Error reading in thread: {}", e);
             }
         }
-        // self with lifetime
         Self { stream, os, addr }
     }
 
@@ -48,15 +46,13 @@ impl<'a> Handler<'a> {
             }
         }
 
-        let mut buffer = [0; 4096];
-        let size = self
-            .stream
-            .read(&mut buffer)
-            .expect("Error reading from stream");
+        let mut reader = BufReader::new(&mut self.stream);
+        let buffer = reader.fill_buf()?.to_vec();
+        reader.consume(buffer.len());
 
         println!(
             "{}",
-            String::from_utf8_lossy(&buffer[..size])
+            String::from_utf8_lossy(&buffer)
                 .trim_end_matches('\0')
                 .trim_end()
         );
@@ -68,32 +64,23 @@ impl<'a> Handler<'a> {
     }
 
     pub fn download(&mut self, cmd: String, filename: String) -> Result<(), std::io::Error> {
-        let status = self.stream.write_all(cmd.as_bytes());
-        if let Err(e) = status {
-            return Err(e);
-        }
+        self.stream.write_all(cmd.as_bytes())?;
 
-        let mut file = match self.create_file_if_not_exists(filename.as_str()) {
-            Ok(f) => f,
-            Err(e) => return Err(e),
-        };
+        let mut file = self.create_file_if_not_exists(filename.as_str())?;
 
-        let mut buffer = [0; 4096];
-        let mut end = false;
-        while !end {
-            let size = self
-                .stream
-                .read(&mut buffer)
-                .expect("Error reading from stream");
-            if size < 4096 {
-                end = true;
-            }
-            match file.write_all(&buffer[..size]) {
-                Ok(_) => (),
-                Err(e) => return Err(e),
+        let mut reader = BufReader::new(&mut self.stream);
+        let mut buff = reader.fill_buf()?.to_vec();
+        reader.consume(buff.len());
+
+        file.write_all(&buff)?;
+        match buff.flush() {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Error flushing file: {}", e);
             }
         }
 
+        println!("File received");
         file.flush()
     }
 
