@@ -31,7 +31,8 @@ fn main() {
 }
 
 fn manager(handler: &mut Handler) {
-    loop {
+    let mut should_stop = false;
+    while !should_stop {
         let cmd = prompt!(handler);
 
         if cmd.starts_with("download") {
@@ -45,17 +46,15 @@ fn manager(handler: &mut Handler) {
                     println!("Error downloading file: {}", e);
                 }
             }
-        }
-
-        if cmd.starts_with(".quit") {
+        } else if cmd.starts_with(".quit") {
             handler.quit().expect("Error quitting");
-            break;
-        }
-
-        match handler.exec(cmd) {
-            Ok(_) => (),
-            Err(e) => {
-                println!("Error executing command: {}", e);
+            should_stop = true;
+        } else {
+            match handler.exec(cmd) {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("Error executing command: {}", e);
+                }
             }
         }
     }
