@@ -29,12 +29,26 @@ fn main() {
                         handler.quit().expect("Error quitting");
                         break;
                     }
-                    _ => match handler.exec(cmd) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            println!("Error executing command: {}", e);
+                    _ => {
+                        if cmd.starts_with("download") {
+                            let full_cmd = cmd.clone();
+                            let filename = full_cmd.split_whitespace().last().unwrap();
+                            let cmd = cmd.replace(filename, "");
+                            match handler.download(cmd, filename.to_string()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    println!("Error downloading file: {}", e);
+                                }
+                            }
+                            continue;
                         }
-                    },
+                        match handler.exec(cmd) {
+                            Ok(_) => (),
+                            Err(e) => {
+                                println!("Error executing command: {}", e);
+                            }
+                        }
+                    }
                 }
             }
             println!("[!!] Connection closed");
