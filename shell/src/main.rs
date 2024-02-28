@@ -1,6 +1,5 @@
-use std::process::exit;
-
 use fork::{fork, Fork};
+use std::process::exit;
 
 mod clients;
 mod utils;
